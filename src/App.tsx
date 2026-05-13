@@ -61,6 +61,12 @@ type CellPos = {
   col: number;
 };
 
+type LeaderboardEntry = {
+  name: string;
+  score: number;
+  date: string;
+};
+
 const createEmptyBoard = (): Tile[][] =>
   Array.from({ length: ROWS }, () => Array.from({ length: COLS }, () => null));
 
@@ -162,8 +168,11 @@ function App() {
   const [selected, setSelected] = useState<CellPos[]>([]);
   const [score, setScore] = useState(0);
   const [highScore, setHighScore] = useState(0);
-  const [leaderboard, setLeaderboard] = useState<number[]>([]);
+  const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
   const [newScoreIndex, setNewScoreIndex] = useState(-1);
+  const [showNicknameModal, setShowNicknameModal] = useState(false);
+  const [nicknameInput, setNicknameInput] = useState('Player');
+  const [pendingScore, setPendingScore] = useState<number | null>(null);
   const [longestWord, setLongestWord] = useState('');
   const [highestScoringWord, setHighestScoringWord] = useState('');
   const [highestWordScore, setHighestWordScore] = useState(0);
@@ -196,6 +205,71 @@ function App() {
     [board, selected]
   );
 
+  const normalizeLeaderboard = (raw: unknown): LeaderboardEntry[] => {
+    if (!Array.isArray(raw)) return [];
+    const entries = raw
+      .map((item) => {
+        if (item && typeof item === 'object' && 'score' in item) {
+          const maybe = item as { name?: unknown; score?: unknown; date?: unknown };
+          const score = typeof maybe.score === 'number' ? maybe.score : Number(maybe.score) || 0;
+          const name = typeof maybe.name === 'string' && maybe.name.trim() !== ''
+            ? maybe.name.slice(0, 12)
+            : 'Player';
+          const date = typeof maybe.date === 'string' ? maybe.date : new Date().toISOString();
+          return { name, score, date };
+        }
+
+        if (typeof item === 'number') {
+          return { name: 'Player', score: item, date: new Date().toISOString() };
+        }
+
+        return null;
+      })
+      .filter((entry): entry is LeaderboardEntry => entry !== null);
+    return entries.sort((a, b) => b.score - a.score).slice(0, 5);
+  };
+
+  const prepareGameOver = (finalScore: number) => {
+    const candidate: LeaderboardEntry = {
+      name: 'Player',
+      score: finalScore,
+      date: new Date().toISOString(),
+    };
+    const next = [...leaderboard, candidate].sort((a, b) => b.score - a.score).slice(0, 5);
+    const qualifies = next.includes(candidate);
+    if (qualifies) {
+      setPendingScore(finalScore);
+      setNicknameInput('Player');
+      setShowNicknameModal(true);
+      setNewScoreIndex(-1);
+    } else {
+      setShowGameOver(true);
+      setNewScoreIndex(-1);
+    }
+  };
+
+  const handleNicknameSubmit = () => {
+    if (pendingScore === null) return;
+    const name = nicknameInput.trim().slice(0, 12) || 'Player';
+    const entry: LeaderboardEntry = {
+      name,
+      score: pendingScore,
+      date: new Date().toISOString(),
+    };
+    const next = [...leaderboard, entry].sort((a, b) => b.score - a.score).slice(0, 5);
+    setLeaderboard(next);
+    setNewScoreIndex(next.indexOf(entry));
+    setPendingScore(null);
+    setShowNicknameModal(false);
+    setShowGameOver(true);
+  };
+
+  const handleNicknameCancel = () => {
+    setPendingScore(null);
+    setShowNicknameModal(false);
+    setShowGameOver(true);
+  };
+
   useEffect(() => {
     const storedHighScore = window.localStorage.getItem(STORAGE_KEY);
     const storedLeaderboard = window.localStorage.getItem(LEADERBOARD_KEY);
@@ -204,7 +278,7 @@ function App() {
     }
     if (storedLeaderboard) {
       try {
-        setLeaderboard(JSON.parse(storedLeaderboard));
+        setLeaderboard(normalizeLeaderboard(JSON.parse(storedLeaderboard)));
       } catch {
         setLeaderboard([]);
       }
@@ -227,31 +301,25 @@ function App() {
         const free = getTopFreeColumns(prev);
         if (free.length === 0) {
           setStatus('gameover');
-          setShowGameOver(true);
+          prepareGameOver(score);
           return prev;
         }
         const next = dropTile(prev, free[Math.floor(Math.random() * free.length)], randomLetter());
         if (isTopRowFull(next)) {
           setStatus('gameover');
-          setShowGameOver(true);
+          prepareGameOver(score);
         }
         return next;
       });
     }, 1700);
     return () => window.clearInterval(interval);
-  }, [status]);
+  }, [status, score, leaderboard]);
 
   useEffect(() => {
     if (score > highScore) {
       setHighScore(score);
     }
   }, [score, highScore]);
-
-  useEffect(() => {
-    if (status === 'gameover') {
-      handleLeaderboardUpdate(score);
-    }
-  }, [status, score]);
 
   const spawnInitialTiles = (boardState: Tile[][]) => {
     let nextBoard = cloneBoard(boardState);
@@ -275,6 +343,8 @@ function App() {
     setHighestScoringWord('');
     setHighestWordScore(0);
     setShowGameOver(false);
+    setShowNicknameModal(false);
+    setPendingScore(null);
     setNewScoreIndex(-1);
     setWordRewardType(null);
     setRecoveryActive(false);
@@ -285,182 +355,86 @@ function App() {
     lastSuccessTime.current = 0;
   };
 
-  const handleLeaderboardUpdate = (finalScore: number) => {
-    // Create a new leaderboard with the final score
-    const tempLeaderboard = [...leaderboard];
-    
-    // Check if the score qualifies for top 5
-    if (tempLeaderboard.length < 5 || finalScore > tempLeaderboard[tempLeaderboard.length - 1]) {
-      tempLeaderboard.push(finalScore);
-      tempLeaderboard.sort((a, b) => b - a);
-      const newLeaderboard = tempLeaderboard.slice(0, 5);
-      
-      // Find the index of the newly inserted score
-      const insertedIndex = newLeaderboard.indexOf(finalScore);
-      
-      setLeaderboard(newLeaderboard);
-      setNewScoreIndex(insertedIndex);
-    } else {
-      setNewScoreIndex(-1);
-    }
-  };
-
-  const handleClickTap = (row: number, col: number) => {
-    // Called when a click/tap is confirmed (minimal movement)
-    if (status !== 'playing') return;
-    
+  const startSelection = (row: number, col: number) => {
     const currentPos = { row, col };
-    const index = selected.findIndex((pos) => pos.row === row && pos.col === col);
-    
-    // Click on already-selected tile: clear entire selection
-    if (index >= 0) {
-      setSelected([]);
-      return;
-    }
-    
-    // Click on empty space: ignore (handled by handleBoardClick)
-    if (!board[row][col]) {
-      return;
-    }
-    
-    // Click on unselected tile adjacent to last selected: add to path
-    if (selected.length === 0) {
-      setSelected([currentPos]);
-      const ctx = getAudioContext();
-      playSelectSound(ctx);
-      return;
-    }
-    
+    const alreadySelected = selected.some((pos) => pos.row === row && pos.col === col);
     const lastSelected = selected[selected.length - 1];
-    if (adjacent(lastSelected, currentPos)) {
-      setSelected((prev) => [...prev, currentPos]);
-      const ctx = getAudioContext();
-      playSelectSound(ctx);
+
+    if (alreadySelected) {
       return;
     }
-    
-    // Click on non-adjacent unselected tile: ignore (only drag can start new path)
+
+    if (selected.length === 0 || !lastSelected || !adjacent(lastSelected, currentPos)) {
+      setSelected([currentPos]);
+      playSelectSound(getAudioContext());
+      return;
+    }
+
+    setSelected((prev) => [...prev, currentPos]);
+    playSelectSound(getAudioContext());
   };
 
   const handleBoardClick = (e: React.MouseEvent) => {
-    // Click on empty space or outside grid clears selection
-    // BUT: Do NOT clear if a drag just occurred
     if (status !== 'playing') return;
-    if (didDragRef.current) {
-      console.log("DRAG_JUST_OCCURRED - not clearing selection on click");
-      didDragRef.current = false; // Reset for next interaction
-      return;
-    }
-    
     const target = e.target as HTMLElement;
-    
-    // Check if click was on empty cell or board itself, not on a tile
-    // Need to check both the target and if it's inside a tile button
     const isEmptyCell = target.classList.contains('empty');
     const isBoardItself = target.classList.contains('board');
     const isInsideTile = target.closest('.cell.tile') !== null;
-    
-    // Only clear if definitely clicking empty space, not inside a tile
     if ((isEmptyCell || isBoardItself) && !isInsideTile) {
-      console.log("CLEAR_FROM: handleBoardClick (empty space)");
       setSelected([]);
     }
   };
 
-  const handleMouseDown = (row: number, col: number, e: React.MouseEvent) => {
-    if (status !== 'playing') return;
-    
-    // Track starting position to calculate movement distance
+  const handlePointerDown = (row: number, col: number, e: React.PointerEvent<HTMLButtonElement>) => {
+    if (status !== 'playing' || !board[row][col]) return;
+    e.preventDefault();
+    const target = e.currentTarget;
+    if (target.setPointerCapture) {
+      target.setPointerCapture(e.pointerId);
+    }
     pointerStartRef.current = { x: e.clientX, y: e.clientY };
     setDragStartPos({ row, col });
     isPointerDownRef.current = true;
-    didDragRef.current = false; // Reset drag flag at start of new pointer session
-    isDraggingRef.current = false; // Start as false, will set to true if movement exceeds threshold
-    console.log("POINTER_DOWN");
+    didDragRef.current = false;
+    isDraggingRef.current = false;
+    startSelection(row, col);
   };
 
-  const handleMouseMove = (e: React.MouseEvent) => {
-    if (!dragStartPos || !pointerStartRef.current) return;
-    
-    // Calculate distance moved
-    const dx = Math.abs(e.clientX - pointerStartRef.current.x);
-    const dy = Math.abs(e.clientY - pointerStartRef.current.y);
-    const distance = Math.sqrt(dx * dx + dy * dy);
-    
-    // Only start drag if movement exceeds threshold
-    if (distance < DRAG_THRESHOLD) return;
-    
-    if (!isDraggingRef.current) {
-      // First time crossing threshold: initialize drag selection
-      isDraggingRef.current = true;
-      didDragRef.current = true; // Mark that a drag occurred
-      console.log("DRAG_STARTED");
-      const index = selected.findIndex((pos) => pos.row === dragStartPos.row && pos.col === dragStartPos.col);
-      if (index >= 0) {
-        // Dragging from already-selected tile: keep selection as is, allow backtrack
-      } else if (board[dragStartPos.row][dragStartPos.col]) {
-        // Dragging from unselected tile: start new selection
-        setSelected([dragStartPos]);
-        const ctx = getAudioContext();
-        playSelectSound(ctx);
-      }
-    }
-  };
-
-  const handleMouseEnter = (row: number, col: number) => {
-    if (!isDraggingRef.current || status !== 'playing' || !board[row][col] || !dragStartPos) return;
-    
+  const handlePointerEnter = (row: number, col: number, e: React.PointerEvent<HTMLButtonElement>) => {
+    if (!isPointerDownRef.current || status !== 'playing' || !board[row][col]) return;
+    e.preventDefault();
     const currentPos = { row, col };
-    const lastSelected = selected[selected.length - 1];
-    
-    // Support backtracking: if dragging back to previous tile, remove last tile
-    if (selected.length > 1 && lastSelected.row === row && lastSelected.col === col) {
-      // Already at this tile, don't add again
+    const alreadySelected = selected.some((pos) => pos.row === row && pos.col === col);
+    const prevTile = selected[selected.length - 2];
+
+    if (alreadySelected) {
+      if (prevTile && prevTile.row === row && prevTile.col === col) {
+        setSelected((prev) => prev.slice(0, -1));
+        playSelectSound(getAudioContext());
+      }
       return;
     }
-    
-    if (selected.length > 0) {
-      const prevTile = selected[selected.length - 2] || null;
-      if (prevTile && prevTile.row === row && prevTile.col === col) {
-        // Dragging back to previous tile: remove last selection
-        setSelected(prev => prev.slice(0, -1));
-        const ctx = getAudioContext();
-        playSelectSound(ctx);
-        return;
-      }
-    }
-    
-    // Normal drag: extend path if adjacent
-    if (selected.length === 0 || adjacent(lastSelected, currentPos)) {
-      const alreadySelected = selected.some(pos => pos.row === row && pos.col === col);
-      if (!alreadySelected) {
-        setSelected(prev => [...prev, currentPos]);
-        const ctx = getAudioContext();
-        playSelectSound(ctx);
-      }
+
+    const lastSelected = selected[selected.length - 1];
+    if (selected.length === 0 || !lastSelected || adjacent(lastSelected, currentPos)) {
+      setSelected((prev) => [...prev, currentPos]);
+      playSelectSound(getAudioContext());
+      isDraggingRef.current = true;
+      didDragRef.current = true;
     }
   };
 
-  const handleMouseUp = (row: number | null, col: number | null) => {
-    console.log("POINTER_UP - isDrag:", isDraggingRef.current, "didDrag:", didDragRef.current, "row:", row, "col:", col);
-    isPointerDownRef.current = false;
-    
-    // Store drag state before resetting
-    const wasDrag = didDragRef.current;
-    
-    // Only apply click/tap clearing if NO drag occurred
-    if (!wasDrag && dragStartPos && row === dragStartPos.row && col === dragStartPos.col) {
-      console.log("HANDLING_CLICK_TAP");
-      handleClickTap(row, col);
-    } else if (wasDrag) {
-      console.log("DRAG_OCCURRED - NOT clearing selection, keeping selection for Submit");
-      // Drag occurred - DO NOT clear selection
-      // Selection remains visible for player to press Submit
+  const handlePointerUp = (row: number | null, col: number | null, e: React.PointerEvent<HTMLElement>) => {
+    e.preventDefault();
+    if (e.currentTarget.releasePointerCapture) {
+      try {
+        e.currentTarget.releasePointerCapture(e.pointerId);
+      } catch {
+        // ignore if not captured
+      }
     }
-    
-    // Reset drag tracking for next pointer session
+    isPointerDownRef.current = false;
     isDraggingRef.current = false;
-    // Delay resetting didDragRef so click handlers don't see stale state
     window.setTimeout(() => {
       didDragRef.current = false;
     }, 0);
@@ -468,100 +442,16 @@ function App() {
     pointerStartRef.current = null;
   };
 
-  const handleTouchStart = (row: number, col: number, e: React.TouchEvent) => {
-    if (status !== 'playing') return;
-    e.preventDefault();
-    
-    const touch = e.touches[0];
-    pointerStartRef.current = { x: touch.clientX, y: touch.clientY };
-    setDragStartPos({ row, col });
-    isPointerDownRef.current = true;
-    didDragRef.current = false; // Reset drag flag at start of new pointer session
-    isDraggingRef.current = false; // Start as false, will set to true if movement exceeds threshold
-    console.log("TOUCH_START");
-  };
-
-  const handleTouchMove = (e: React.TouchEvent) => {
-    if (!dragStartPos || !pointerStartRef.current) return;
-    
-    const touch = e.touches[0];
-    
-    // Calculate distance moved
-    const dx = Math.abs(touch.clientX - pointerStartRef.current.x);
-    const dy = Math.abs(touch.clientY - pointerStartRef.current.y);
-    const distance = Math.sqrt(dx * dx + dy * dy);
-    
-    // Only start drag if movement exceeds threshold
-    if (distance < DRAG_THRESHOLD) return;
-    
-    if (!isDraggingRef.current) {
-      // First time crossing threshold: initialize drag
-      isDraggingRef.current = true;
-      didDragRef.current = true; // Mark that a drag occurred
-      console.log("TOUCH_DRAG_STARTED");
-      const index = selected.findIndex((pos) => pos.row === dragStartPos.row && pos.col === dragStartPos.col);
-      if (index === -1 && board[dragStartPos.row][dragStartPos.col]) {
-        // Start new selection from unselected tile
-        setSelected([dragStartPos]);
-        const ctx = getAudioContext();
-        playSelectSound(ctx);
+  const handlePointerCancel = (e: React.PointerEvent<HTMLElement>) => {
+    if (e.currentTarget.releasePointerCapture) {
+      try {
+        e.currentTarget.releasePointerCapture(e.pointerId);
+      } catch {
+        // ignore if not captured
       }
     }
-    
-    // Now handle the actual drag movement
-    if (isDraggingRef.current) {
-      const element = document.elementFromPoint(touch.clientX, touch.clientY);
-      if (element && element.classList.contains('cell') && element.classList.contains('tile')) {
-        const row = parseInt(element.getAttribute('data-row') || '0');
-        const col = parseInt(element.getAttribute('data-col') || '0');
-        
-        const currentPos = { row, col };
-        const lastSelected = selected[selected.length - 1];
-        
-        // Support backtracking: if dragging back to previous tile, remove last tile
-        if (selected.length > 1) {
-          const prevTile = selected[selected.length - 2];
-          if (prevTile && prevTile.row === row && prevTile.col === col) {
-            setSelected(prev => prev.slice(0, -1));
-            const ctx = getAudioContext();
-            playSelectSound(ctx);
-            return;
-          }
-        }
-        
-        // Normal drag: extend path if adjacent
-        if (selected.length === 0 || adjacent(lastSelected, currentPos)) {
-          const alreadySelected = selected.some(pos => pos.row === row && pos.col === col);
-          if (!alreadySelected) {
-            setSelected(prev => [...prev, currentPos]);
-            const ctx = getAudioContext();
-            playSelectSound(ctx);
-          }
-        }
-      }
-    }
-  };
-
-  const handleTouchEnd = (row: number | null, col: number | null) => {
-    console.log("TOUCH_END - isDrag:", isDraggingRef.current, "didDrag:", didDragRef.current, "row:", row, "col:", col);
     isPointerDownRef.current = false;
-    
-    // Store drag state before resetting
-    const wasDrag = didDragRef.current;
-    
-    // Only apply tap clearing if NO drag occurred
-    if (!wasDrag && dragStartPos && row === dragStartPos.row && col === dragStartPos.col) {
-      console.log("HANDLING_TAP");
-      handleClickTap(row, col);
-    } else if (wasDrag) {
-      console.log("TOUCH_DRAG_OCCURRED - NOT clearing selection, keeping selection for Submit");
-      // Drag occurred - DO NOT clear selection
-      // Selection remains visible for player to press Submit
-    }
-    
-    // Reset drag tracking for next pointer session
     isDraggingRef.current = false;
-    // Delay resetting didDragRef so click handlers don't see stale state
     window.setTimeout(() => {
       didDragRef.current = false;
     }, 0);
@@ -616,7 +506,7 @@ function App() {
       
       if (isTopRowFull(recoveryBoard)) {
         setStatus('gameover');
-        setShowGameOver(true);
+        prepareGameOver(score);
       }
       return recoveryBoard;
     });
@@ -672,7 +562,7 @@ function App() {
         </div>
       </div>
 
-      <div className={`board${invalid ? ' shake' : ''} ${recoveryActive ? 'recovery-flash' : ''}${wordRewardType ? ` reward-${wordRewardType}` : ''}`} onClick={handleBoardClick} onMouseUp={(e) => { if (e.target === e.currentTarget) handleMouseUp(null, null); }} onMouseLeave={(e) => handleMouseUp(null, null)} onMouseMove={handleMouseMove}>
+      <div className={`board${invalid ? ' shake' : ''} ${recoveryActive ? 'recovery-flash' : ''}${wordRewardType ? ` reward-${wordRewardType}` : ''}`} onClick={handleBoardClick} onPointerUp={(e) => { if (e.target === e.currentTarget) handlePointerUp(null, null, e); }} onPointerCancel={handlePointerCancel} onPointerMove={(e) => e.preventDefault()}>
         {board.flatMap((row, rowIndex) =>
           row.map((letter, colIndex) => {
             const isSelected = selected.some((pos) => pos.row === rowIndex && pos.col === colIndex);
@@ -682,12 +572,10 @@ function App() {
                 key={`${rowIndex}-${colIndex}`}
                 type="button"
                 className={`cell ${letter ? 'tile' : 'empty'} ${isSelected ? 'selected' : ''} ${status === 'gameover' ? 'game-over' : ''}`}
-                onMouseDown={(e) => handleMouseDown(rowIndex, colIndex, e)}
-                onMouseUp={(e) => { e.stopPropagation(); handleMouseUp(rowIndex, colIndex); }}
-                onMouseEnter={() => handleMouseEnter(rowIndex, colIndex)}
-                onTouchStart={(e) => handleTouchStart(rowIndex, colIndex, e)}
-                onTouchMove={handleTouchMove}
-                onTouchEnd={(e) => { e.stopPropagation(); handleTouchEnd(rowIndex, colIndex); }}
+                onPointerDown={(e) => handlePointerDown(rowIndex, colIndex, e)}
+                onPointerEnter={(e) => handlePointerEnter(rowIndex, colIndex, e)}
+                onPointerUp={(e) => { e.stopPropagation(); handlePointerUp(rowIndex, colIndex, e); }}
+                onPointerCancel={handlePointerCancel}
                 data-row={rowIndex}
                 data-col={colIndex}
               >
@@ -738,7 +626,7 @@ function App() {
                 <h3>🎮 How to Play</h3>
                 <ul>
                   <li>Tap or drag across tiles that are horizontally, vertically, or diagonally adjacent</li>
-                  <li>Tap a selected tile to clear all selections</li>
+                  <li>Tap a tile to select it or start a new word</li>
                   <li>Build words of 3+ letters</li>
                   <li>Submit valid words to clear tiles and earn points</li>
                   <li>New tiles fall every 1.7 seconds</li>
@@ -781,6 +669,43 @@ function App() {
         </div>
       )}
 
+      {showNicknameModal && (
+        <div className="modal-overlay" onClick={handleNicknameCancel}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h2>🏷️ Enter Nickname</h2>
+              <button className="modal-close" onClick={handleNicknameCancel}>×</button>
+            </div>
+            <div className="modal-body">
+              <p>Congratulations! Your score qualifies for the top 5 leaderboard.</p>
+              <label htmlFor="nickname" className="info-section">
+                <strong>Nickname</strong>
+                <input
+                  id="nickname"
+                  className="nickname-input"
+                  type="text"
+                  value={nicknameInput}
+                  maxLength={12}
+                  onChange={(e) => setNicknameInput(e.target.value)}
+                  placeholder="Player"
+                />
+              </label>
+              <p className="info-section" style={{ marginTop: '8px' }}>
+                Keep it short — 12 characters max.
+              </p>
+              <div className="button-row">
+                <button className="secondary" onClick={handleNicknameCancel}>
+                  Cancel
+                </button>
+                <button className="primary" onClick={handleNicknameSubmit}>
+                  Save
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {showGameOver && (
         <div className="modal-overlay" onClick={() => setShowGameOver(false)}>
           <div className="modal-content game-over-modal" onClick={(e) => e.stopPropagation()}>
@@ -806,11 +731,10 @@ function App() {
                 <h3>🏆 Top 5 High Scores</h3>
                 <div className="leaderboard">
                   {leaderboard.length > 0 ? (
-                    leaderboard.map((score, index) => (
-                      <div key={index} className={`leaderboard-item ${score === highScore ? 'current-high' : ''} ${index === newScoreIndex ? 'new-score' : ''}`}>
+                    leaderboard.map((entry, index) => (
+                      <div key={`${entry.score}-${entry.date}`} className={`leaderboard-item ${index === newScoreIndex ? 'new-score' : ''}`}>
                         <span className="rank">#{index + 1}</span>
-                        <span className="score">{score.toLocaleString()}</span>
-                        {score === highScore && <span className="high-score-badge">⭐</span>}
+                        <span className="score">{entry.name} — {entry.score.toLocaleString()}</span>
                         {index === newScoreIndex && <span className="new-score-badge">✨</span>}
                       </div>
                     ))
