@@ -357,10 +357,12 @@ function App() {
 
   const startSelection = (row: number, col: number) => {
     const currentPos = { row, col };
-    const alreadySelected = selected.some((pos) => pos.row === row && pos.col === col);
+    const selectedIndex = selected.findIndex((pos) => pos.row === row && pos.col === col);
     const lastSelected = selected[selected.length - 1];
 
-    if (alreadySelected) {
+    if (selectedIndex >= 0) {
+      setSelected((prev) => prev.slice(0, selectedIndex));
+      playSelectSound(getAudioContext());
       return;
     }
 
