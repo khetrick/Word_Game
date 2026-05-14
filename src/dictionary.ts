@@ -19,7 +19,7 @@ export const DICTIONARY = new Set<string>([
   'max', 'may', 'men', 'met', 'mid', 'mix', 'mob', 'mod', 'mom', 'mop', 'mud', 'mug', 'nab','nit',
   'nag', 'nap', 'net', 'new', 'nod', 'nor', 'not', 'now', 'nub', 'nun', 'nut', 'oak', 'oar','ode',
   'oat', 'odd', 'off', 'oft', 'oil', 'old', 'one', 'opt', 'orb', 'ore', 'our', 'out', 'owe',
-  'owl', 'own', 'pad', 'pal', 'pan', 'par', 'pat', 'paw', 'pay', 'pea', 'peg', 'pen', 'pep','pee','pon'
+  'owl', 'own', 'pad', 'pal', 'pan', 'par', 'pat', 'paw', 'pay', 'pea', 'peg', 'pen', 'pep','pee',
   'per', 'pet', 'pew', 'pie', 'pig', 'pin', 'pit', 'pod', 'pop', 'pot', 'pow', 'pro', 'pry',
   'pub', 'pun', 'pup', 'put', 'rag', 'ram', 'ran', 'rap', 'rat', 'raw', 'ray', 'red', 'ref','rad',
   'rep', 'rib', 'rid', 'rig', 'rim', 'rip', 'rob', 'rod', 'roe', 'rot', 'row', 'rub', 'rug',
@@ -37,7 +37,7 @@ export const DICTIONARY = new Set<string>([
   'able', 'ache', 'acid', 'acme', 'acre', 'aged', 'aide', 'also', 'alto', 'amen', 'amid',
   'ante', 'apes', 'apex', 'aqua', 'arch', 'area', 'arts', 'army', 'away', 'axes', 'axis',
   'baby', 'back', 'bake', 'bald', 'ball', 'band', 'bank', 'bare', 'bark', 'barn', 'base',
-  'bash', 'bath', 'beat', 'bear', 'been', 'beep', 'beer', 'bell', 'belt', 'bend', 'bent',
+  'bash', 'bath', 'beat', 'bear', 'been', 'beep', 'beer', 'bell', 'belt', 'bend', 'bent','beef',
   'best', 'bias', 'bile', 'bill', 'bind', 'bird', 'bite', 'blow', 'blue', 'boar', 'boat',
   'body', 'bold', 'bolt', 'bomb', 'bond', 'bone', 'book', 'boom', 'boot', 'bore', 'born',
   'boss', 'both', 'bowl', 'bulk', 'burn', 'bush', 'busy', 'byte', 'cage', 'cake', 'calf',
