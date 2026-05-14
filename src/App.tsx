@@ -1,10 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { createClient } from '@supabase/supabase-js';
 import { DICTIONARY } from './dictionary';
 
 const ROWS = 10;
 const COLS = 6;
 const STORAGE_KEY = 'word-drop-high-score';
-const LEADERBOARD_KEY = 'word-drop-leaderboard';
+
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string;
+const supabaseKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string;
+const supabase = createClient(supabaseUrl, supabaseKey);
 
 const letterPool = [
   ...'EEEEEEEEEEEEEEEEAAAAAAAIIIIIIIIOOOOOOOOONNNNNNRRRRRRTTTTTTLLLLSSSSUUUUUDDDDDDGGGBBCCMMPPFFHHVVWWYYKJXQZ'
@@ -169,6 +173,7 @@ function App() {
   const [score, setScore] = useState(0);
   const [highScore, setHighScore] = useState(0);
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
+  const [leaderboardError, setLeaderboardError] = useState<string | null>(null);
   const [newScoreIndex, setNewScoreIndex] = useState(-1);
   const [showNicknameModal, setShowNicknameModal] = useState(false);
   const [nicknameInput, setNicknameInput] = useState('Player');
@@ -205,38 +210,62 @@ function App() {
     [board, selected]
   );
 
-  const normalizeLeaderboard = (raw: unknown): LeaderboardEntry[] => {
-    if (!Array.isArray(raw)) return [];
-    const entries = raw
-      .map((item) => {
-        if (item && typeof item === 'object' && 'score' in item) {
-          const maybe = item as { name?: unknown; score?: unknown; date?: unknown };
-          const score = typeof maybe.score === 'number' ? maybe.score : Number(maybe.score) || 0;
-          const name = typeof maybe.name === 'string' && maybe.name.trim() !== ''
-            ? maybe.name.slice(0, 12)
-            : 'Player';
-          const date = typeof maybe.date === 'string' ? maybe.date : new Date().toISOString();
-          return { name, score, date };
-        }
+  const fetchGlobalLeaderboard = async (): Promise<LeaderboardEntry[]> => {
+    console.log('Fetching global leaderboard from Supabase');
+    setLeaderboardError(null);
+    if (!supabaseUrl || !supabaseKey) {
+      setLeaderboardError('Global leaderboard unavailable');
+      setLeaderboard([]);
+      return [];
+    }
 
-        if (typeof item === 'number') {
-          return { name: 'Player', score: item, date: new Date().toISOString() };
-        }
+    const { data, error } = await supabase
+      .from('leaderboard')
+      .select('name, score, date')
+      .order('score', { ascending: false })
+      .limit(10);
 
-        return null;
-      })
-      .filter((entry): entry is LeaderboardEntry => entry !== null);
-    return entries.sort((a, b) => b.score - a.score).slice(0, 5);
+    if (error || !data) {
+      console.error('Supabase fetch error', error);
+      setLeaderboardError('Global leaderboard unavailable');
+      setLeaderboard([]);
+      return [];
+    }
+
+    const entries = data.map((row) => ({
+      name: typeof row.name === 'string' && row.name.trim() !== '' ? row.name.slice(0, 12) : 'Player',
+      score: typeof row.score === 'number' ? row.score : Number(row.score) || 0,
+      date: typeof row.date === 'string' ? row.date : new Date().toISOString(),
+    }));
+
+    setLeaderboard(entries);
+    setLeaderboardError(null);
+    return entries;
+  };
+
+  const submitScoreToSupabase = async (name: string, score: number) => {
+    console.log('Submitting score to Supabase');
+    if (!supabaseUrl || !supabaseKey) {
+      setLeaderboardError('Global leaderboard unavailable');
+      return false;
+    }
+
+    const { error } = await supabase.from('leaderboard').insert([
+      { name, score, date: new Date().toISOString() },
+    ]);
+
+    if (error) {
+      console.error('Supabase submit error', error);
+      setLeaderboardError('Global leaderboard unavailable');
+      return false;
+    }
+
+    return true;
   };
 
   const prepareGameOver = (finalScore: number) => {
-    const candidate: LeaderboardEntry = {
-      name: 'Player',
-      score: finalScore,
-      date: new Date().toISOString(),
-    };
-    const next = [...leaderboard, candidate].sort((a, b) => b.score - a.score).slice(0, 5);
-    const qualifies = next.includes(candidate);
+    const lowestScore = leaderboard[leaderboard.length - 1]?.score ?? 0;
+    const qualifies = leaderboardError === null && (leaderboard.length < 10 || finalScore > lowestScore);
     if (qualifies) {
       setPendingScore(finalScore);
       setNicknameInput('Player');
@@ -248,19 +277,21 @@ function App() {
     }
   };
 
-  const handleNicknameSubmit = () => {
+  const handleNicknameSubmit = async () => {
     if (pendingScore === null) return;
     const name = nicknameInput.trim().slice(0, 12) || 'Player';
-    const entry: LeaderboardEntry = {
-      name,
-      score: pendingScore,
-      date: new Date().toISOString(),
-    };
-    const next = [...leaderboard, entry].sort((a, b) => b.score - a.score).slice(0, 5);
-    setLeaderboard(next);
-    setNewScoreIndex(next.indexOf(entry));
+    const success = await submitScoreToSupabase(name, pendingScore);
     setPendingScore(null);
     setShowNicknameModal(false);
+
+    if (!success) {
+      setShowGameOver(true);
+      return;
+    }
+
+    const entries = await fetchGlobalLeaderboard();
+    const index = entries.findIndex((entry) => entry.score === pendingScore && entry.name === name);
+    setNewScoreIndex(index);
     setShowGameOver(true);
   };
 
@@ -272,27 +303,16 @@ function App() {
 
   useEffect(() => {
     const storedHighScore = window.localStorage.getItem(STORAGE_KEY);
-    const storedLeaderboard = window.localStorage.getItem(LEADERBOARD_KEY);
     if (storedHighScore) {
       setHighScore(Number(storedHighScore) || 0);
     }
-    if (storedLeaderboard) {
-      try {
-        setLeaderboard(normalizeLeaderboard(JSON.parse(storedLeaderboard)));
-      } catch {
-        setLeaderboard([]);
-      }
-    }
+    fetchGlobalLeaderboard();
     startNewGame();
   }, []);
 
   useEffect(() => {
     window.localStorage.setItem(STORAGE_KEY, String(highScore));
   }, [highScore]);
-
-  useEffect(() => {
-    window.localStorage.setItem(LEADERBOARD_KEY, JSON.stringify(leaderboard));
-  }, [leaderboard]);
 
   useEffect(() => {
     if (status !== 'playing') return undefined;
@@ -550,17 +570,24 @@ function App() {
       <div className="title-row">
         <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
           <h1 style={{ margin: 0 }}>Word Drop</h1>
-          <div style={{ fontSize: '1.2rem', fontWeight: 'bold', color: '#4a90e2' }}>
-            Score: {score}
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '2px' }}>
+            <div style={{ fontSize: '0.95rem', color: '#d9ebff' }}>Current Score</div>
+            <div style={{ fontSize: '1.2rem', fontWeight: 'bold', color: '#4a90e2' }}>
+              {score}
+            </div>
           </div>
         </div>
-        <div style={{ display: 'flex', gap: '8px' }}>
-          <button className="secondary" onClick={() => setShowInfo(true)} style={{ padding: '8px', minHeight: 'auto', fontSize: '1.2rem' }}>
-            ℹ️
-          </button>
-          <button className="secondary" onClick={startNewGame}>
-            Restart
-          </button>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '8px' }}>
+          <div style={{ fontSize: '0.95rem', color: '#d9ebff' }}>Personal High Score</div>
+          <div style={{ fontSize: '1rem', fontWeight: 'bold', color: '#f8fafc' }}>{highScore}</div>
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <button className="secondary" onClick={() => setShowInfo(true)} style={{ padding: '8px', minHeight: 'auto', fontSize: '1.2rem' }}>
+              ℹ️
+            </button>
+            <button className="secondary" onClick={startNewGame}>
+              Restart
+            </button>
+          </div>
         </div>
       </div>
 
@@ -679,7 +706,7 @@ function App() {
               <button className="modal-close" onClick={handleNicknameCancel}>×</button>
             </div>
             <div className="modal-body">
-              <p>Congratulations! Your score qualifies for the top 5 leaderboard.</p>
+              <p>Congratulations! Your score qualifies for the global leaderboard.</p>
               <label htmlFor="nickname" className="info-section">
                 <strong>Nickname</strong>
                 <input
@@ -730,9 +757,11 @@ function App() {
               </div>
 
               <div className="leaderboard-section">
-                <h3>🏆 Top 5 High Scores</h3>
+                <h3>🏆 Global Leaderboard</h3>
                 <div className="leaderboard">
-                  {leaderboard.length > 0 ? (
+                  {leaderboardError ? (
+                    <div className="no-scores">{leaderboardError}</div>
+                  ) : leaderboard.length > 0 ? (
                     leaderboard.map((entry, index) => (
                       <div key={`${entry.score}-${entry.date}`} className={`leaderboard-item ${index === newScoreIndex ? 'new-score' : ''}`}>
                         <span className="rank">#{index + 1}</span>
@@ -741,7 +770,7 @@ function App() {
                       </div>
                     ))
                   ) : (
-                    <div className="no-scores">No scores yet - play to set records!</div>
+                    <div className="no-scores">No global scores yet - be the first!</div>
                   )}
                 </div>
               </div>
