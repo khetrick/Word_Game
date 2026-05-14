@@ -107,7 +107,7 @@ export const DICTIONARY = new Set<string>([
   'stag', 'star', 'stay', 'stem', 'step', 'stew', 'stir', 'stop', 'stub', 'stud', 'such',
   'suit', 'sulk', 'sums', 'sung', 'sunk', 'sure', 'surf', 'swam', 'swan', 'swap', 'sway',
   'swim', 'tail', 'take', 'tale', 'talk', 'tall', 'tame', 'tank', 'tape', 'taps', 'tare',
-  'task', 'team', 'tear', 'teas', 'teem', 'tell', 'tend', 'tent', 'term', 'test', 'text',
+  'task', 'team', 'tear', 'teas', 'teem', 'tell', 'tend', 'tent', 'term', 'test', 'text','teen',
   'than', 'that', 'thaw', 'them', 'then', 'they', 'thin', 'this', 'thou', 'thus', 'tick',
   'tide', 'tidy', 'tied', 'ties', 'tier', 'tile', 'tilt', 'time', 'tiny', 'tips', 'tire',
   'toad', 'toes', 'tofu', 'told', 'toll', 'tomb', 'tone', 'took', 'tool', 'tops', 'tore',

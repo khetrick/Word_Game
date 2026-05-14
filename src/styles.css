@@ -561,6 +561,7 @@ button:disabled {
 @media (max-width: 420px) and (max-height: 900px) {
   .app {
     padding: 8px 10px 20px;
+    min-height: 100dvh;
   }
 
   .title-row {
@@ -592,7 +593,7 @@ button:disabled {
   .board {
     gap: 3px;
     margin: 6px 0;
-    padding: 6px;
+    padding: 6px 0 92px;
     border-radius: 12px;
   }
 
@@ -606,7 +607,7 @@ button:disabled {
     position: sticky;
     bottom: 0;
     padding: 10px 0 16px;
-    background: rgba(8, 18, 28, 0.9);
+    background: rgba(8, 18, 28, 0.95);
     z-index: 5;
     margin-top: 8px;
   }
