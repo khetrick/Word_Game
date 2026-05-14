@@ -6,9 +6,18 @@ const ROWS = 10;
 const COLS = 6;
 const STORAGE_KEY = 'word-drop-high-score';
 
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string;
-const supabaseKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string;
-const supabase = createClient(supabaseUrl, supabaseKey);
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
+const supabaseKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || '';
+
+let supabase: ReturnType<typeof createClient> | null = null;
+try {
+  if (supabaseUrl && supabaseKey) {
+    supabase = createClient(supabaseUrl, supabaseKey);
+  }
+} catch (err) {
+  console.error('Failed to initialize Supabase:', err);
+  supabase = null;
+}
 
 const letterPool = [
   ...'EEEEEEEEEEEEEEEEAAAAAAAIIIIIIIIOOOOOOOOONNNNNNRRRRRRTTTTTTLLLLSSSSUUUUUDDDDDDGGGBBCCMMPPFFHHVVWWYYKJXQZ'
@@ -213,54 +222,70 @@ function App() {
   const fetchGlobalLeaderboard = async (): Promise<LeaderboardEntry[]> => {
     console.log('Fetching global leaderboard from Supabase');
     setLeaderboardError(null);
-    if (!supabaseUrl || !supabaseKey) {
+    
+    if (!supabase || !supabaseUrl || !supabaseKey) {
       setLeaderboardError('Global leaderboard unavailable');
       setLeaderboard([]);
       return [];
     }
 
-    const { data, error } = await supabase
-      .from('leaderboard')
-      .select('name, score, date')
-      .order('score', { ascending: false })
-      .limit(10);
+    try {
+      const { data, error } = await supabase
+        .from('leaderboard')
+        .select('name, score, date');
 
-    if (error || !data) {
-      console.error('Supabase fetch error', error);
+      if (error || !data) {
+        console.error('Supabase fetch error', error);
+        setLeaderboardError('Global leaderboard unavailable');
+        setLeaderboard([]);
+        return [];
+      }
+
+      const entries: LeaderboardEntry[] = (data as any[])
+        .sort((a, b) => (b.score || 0) - (a.score || 0))
+        .slice(0, 10)
+        .map((row: any) => ({
+          name: typeof row.name === 'string' && row.name.trim() !== '' ? row.name.slice(0, 12) : 'Player',
+          score: typeof row.score === 'number' ? row.score : Number(row.score) || 0,
+          date: typeof row.date === 'string' ? row.date : new Date().toISOString(),
+        }));
+
+      setLeaderboard(entries);
+      setLeaderboardError(null);
+      return entries;
+    } catch (err) {
+      console.error('Unexpected error fetching leaderboard:', err);
       setLeaderboardError('Global leaderboard unavailable');
       setLeaderboard([]);
       return [];
     }
-
-    const entries = data.map((row) => ({
-      name: typeof row.name === 'string' && row.name.trim() !== '' ? row.name.slice(0, 12) : 'Player',
-      score: typeof row.score === 'number' ? row.score : Number(row.score) || 0,
-      date: typeof row.date === 'string' ? row.date : new Date().toISOString(),
-    }));
-
-    setLeaderboard(entries);
-    setLeaderboardError(null);
-    return entries;
   };
 
   const submitScoreToSupabase = async (name: string, score: number) => {
     console.log('Submitting score to Supabase');
-    if (!supabaseUrl || !supabaseKey) {
+    
+    if (!supabase || !supabaseUrl || !supabaseKey) {
       setLeaderboardError('Global leaderboard unavailable');
       return false;
     }
 
-    const { error } = await supabase.from('leaderboard').insert([
-      { name, score, date: new Date().toISOString() },
-    ]);
+    try {
+      const scoreData = { name, score, date: new Date().toISOString() };
+      const result = await (supabase as any).from('leaderboard').insert([scoreData]);
+      const { error } = result;
 
-    if (error) {
-      console.error('Supabase submit error', error);
+      if (error) {
+        console.error('Supabase submit error', error);
+        setLeaderboardError('Global leaderboard unavailable');
+        return false;
+      }
+
+      return true;
+    } catch (err) {
+      console.error('Unexpected error submitting score:', err);
       setLeaderboardError('Global leaderboard unavailable');
       return false;
     }
-
-    return true;
   };
 
   const prepareGameOver = (finalScore: number) => {
@@ -306,7 +331,13 @@ function App() {
     if (storedHighScore) {
       setHighScore(Number(storedHighScore) || 0);
     }
-    fetchGlobalLeaderboard();
+    try {
+      fetchGlobalLeaderboard();
+    } catch (err) {
+      console.error('Error initializing leaderboard:', err);
+      setLeaderboard([]);
+      setLeaderboardError('Global leaderboard unavailable');
+    }
     startNewGame();
   }, []);
 

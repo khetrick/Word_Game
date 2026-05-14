@@ -118,7 +118,7 @@ export const DICTIONARY = new Set<string>([
   'visa', 'vise', 'void', 'volt', 'vote', 'wade', 'wage', 'wail', 'wait', 'wake', 'walk',
   'wall', 'want', 'ward', 'warm', 'warn', 'warp', 'wars', 'wart', 'wash', 'wasp', 'wast',
   'wave', 'wavy', 'waxy', 'ways', 'weak', 'wear', 'webs', 'week', 'weep', 'well', 'welt',
-  'went', 'wept', 'were', 'west', 'wets', 'what', 'when', 'whom', 'wick', 'wide', 'wife',
+  'went', 'wept', 'were', 'west', 'wets', 'what', 'when', 'whom', 'wick', 'wide', 'wife','wean',
   'wild', 'will', 'wilt', 'wind', 'wine', 'wing', 'wink', 'wins', 'wipe', 'wire', 'wise',
   'wish', 'with', 'woke', 'wolf', 'womb', 'wood', 'wool', 'word', 'wore', 'work', 'worm',
   'worn', 'wrap', 'wren', 'yaks', 'yams', 'yank', 'yard', 'yarn', 'year', 'yell', 'yelp',
