@@ -19,7 +19,7 @@ export const DICTIONARY = new Set<string>([
   'max', 'may', 'men', 'met', 'mid', 'mix', 'mob', 'mod', 'mom', 'mop', 'mud', 'mug', 'nab','nit',
   'nag', 'nap', 'net', 'new', 'nod', 'nor', 'not', 'now', 'nub', 'nun', 'nut', 'oak', 'oar','ode',
   'oat', 'odd', 'off', 'oft', 'oil', 'old', 'one', 'opt', 'orb', 'ore', 'our', 'out', 'owe',
-  'owl', 'own', 'pad', 'pal', 'pan', 'par', 'pat', 'paw', 'pay', 'pea', 'peg', 'pen', 'pep','pee',
+  'owl', 'own', 'pad', 'pal', 'pan', 'par', 'pat', 'paw', 'pay', 'pea', 'peg', 'pen', 'pep','pee','pon'
   'per', 'pet', 'pew', 'pie', 'pig', 'pin', 'pit', 'pod', 'pop', 'pot', 'pow', 'pro', 'pry',
   'pub', 'pun', 'pup', 'put', 'rag', 'ram', 'ran', 'rap', 'rat', 'raw', 'ray', 'red', 'ref','rad',
   'rep', 'rib', 'rid', 'rig', 'rim', 'rip', 'rob', 'rod', 'roe', 'rot', 'row', 'rub', 'rug',
@@ -51,7 +51,7 @@ export const DICTIONARY = new Set<string>([
   'done', 'door', 'dose', 'dove', 'down', 'drag', 'draw', 'drew', 'drip', 'drop', 'drug',
   'drum', 'dual', 'duck', 'dull', 'dumb', 'dump', 'dune', 'dusk', 'dust', 'duty', 'dyed',
   'dyes', 'each', 'earl', 'earn', 'ease', 'east', 'easy', 'echo', 'edge', 'edit', 'eggs',
-  'else', 'emit', 'epic', 'even', 'ever', 'evil', 'exam', 'exit', 'expo', 'face', 'fact','fore',
+  'else', 'emit', 'epic', 'even', 'ever', 'evil', 'exam', 'exit', 'expo', 'face', 'fact','fore','gulp',
   'fade', 'fail', 'fair', 'fall', 'fame', 'fare', 'farm', 'fast', 'fate', 'fear', 'feed',
   'feel', 'feet', 'fell', 'felt', 'fern', 'file', 'fill', 'film', 'find', 'fine', 'fire',
   'firm', 'fish', 'fist', 'five', 'flag', 'flat', 'fled', 'flee', 'flew', 'flip', 'flow',
