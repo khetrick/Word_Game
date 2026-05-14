@@ -27,7 +27,7 @@ export const DICTIONARY = new Set<string>([
   'sex', 'she', 'shy', 'sin', 'sip', 'sir', 'sis', 'sit', 'six', 'ski', 'sky', 'sly', 'sob',
   'sod', 'son', 'sop', 'sot', 'sow', 'soy', 'spa', 'spy', 'sub', 'sue', 'sum', 'sun', 'sup','sud',
   'tab', 'tad', 'tag', 'tan', 'tap', 'tar', 'tat', 'tax', 'tea', 'tee', 'ten', 'the', 'thy',
-  'tic', 'tie', 'tin', 'tip', 'toe', 'ton', 'too', 'top', 'tot', 'toy', 'try', 'tub', 'tug',
+  'tic', 'tie', 'tin', 'tip', 'toe', 'ton', 'too', 'top', 'tot', 'toy', 'try', 'tub', 'tug','tow',
   'two', 'ugh', 'urn', 'use', 'van', 'vat', 'vet', 'via', 'vie', 'vim', 'vow', 'wad', 'wag',
   'war', 'was', 'wax', 'way', 'web', 'wed', 'wee', 'wet', 'who', 'why', 'wig', 'win', 'wit',
   'woe', 'won', 'woo', 'wow', 'wry', 'yak', 'yam', 'yap', 'yaw', 'yes', 'yet', 'yew', 'yin','vex',
