@@ -93,7 +93,7 @@ type CellPos = {
 type LeaderboardEntry = {
   name: string;
   score: number;
-  date: string;
+  created_at: string;
 };
 
 const createEmptyBoard = (): Tile[][] =>
@@ -244,7 +244,7 @@ function App() {
     // Try Supabase client first
     if (supabase) {
       try {
-        const { data, error } = await (supabase as any).from('leaderboard').select('name, score, date');
+        const { data, error } = await (supabase as any).from('leaderboard').select('name, score, created_at');
         if (error || !data) {
           console.warn('Supabase client fetch failed, falling back to REST:', error);
         } else {
@@ -254,7 +254,7 @@ function App() {
             .map((row: any) => ({
               name: typeof row.name === 'string' && row.name.trim() !== '' ? row.name.slice(0, 12) : 'Player',
               score: typeof row.score === 'number' ? row.score : Number(row.score) || 0,
-              date: typeof row.date === 'string' ? row.date : new Date().toISOString(),
+              created_at: typeof row.created_at === 'string' ? row.created_at : new Date().toISOString(),
             }));
           setLeaderboard(entries);
           setLeaderboardError(null);
@@ -268,7 +268,7 @@ function App() {
     // Fallback to REST endpoint
     try {
       const base = (restUrl || '').replace(/\/$/, '');
-      const url = `${base}/leaderboard?select=name,score,date&order=score.desc&limit=10`;
+      const url = `${base}/leaderboard?select=name,score,created_at&order=score.desc,created_at.asc&limit=10`;
       const headers: Record<string, string> = { 'Content-Type': 'application/json' };
       if (anonKey) {
         headers.apikey = anonKey;
@@ -293,7 +293,7 @@ function App() {
         .map((row: any) => ({
           name: typeof row.name === 'string' && row.name.trim() !== '' ? row.name.slice(0, 12) : 'Player',
           score: typeof row.score === 'number' ? row.score : Number(row.score) || 0,
-          date: typeof row.date === 'string' ? row.date : new Date().toISOString(),
+          created_at: typeof row.created_at === 'string' ? row.created_at : new Date().toISOString(),
         }));
       setLeaderboard(entries);
       setLeaderboardError(null);
@@ -310,7 +310,7 @@ function App() {
   const submitScoreToSupabase = async (name: string, score: number) => {
     console.log('Submitting score to Supabase/REST');
 
-    const scoreData = { name, score, date: new Date().toISOString() };
+    const scoreData = { name, score };
 
     // Try Supabase client first
     if (supabase) {
@@ -867,7 +867,7 @@ function App() {
                       </div>
                     ) : Array.isArray(leaderboard) && leaderboard.length > 0 ? (
                       leaderboard.map((entry, index) => (
-                        <div key={`${entry.score}-${entry.date}`} className={`leaderboard-item ${index === newScoreIndex ? 'new-score' : ''}`}>
+                        <div key={`${entry.score}-${entry.created_at}`} className={`leaderboard-item ${index === newScoreIndex ? 'new-score' : ''}`}>
                           <span className="rank">#{index + 1}</span>
                           <span className="score">{entry.name} — {entry.score.toLocaleString()}</span>
                           {index === newScoreIndex && <span className="new-score-badge">✨</span>}
