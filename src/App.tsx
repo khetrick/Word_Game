@@ -9,8 +9,8 @@ const STORAGE_KEY = 'word-drop-high-score';
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
 const supabaseKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || '';
 // Optional REST endpoint and anon key fallbacks (user supplied REST base)
-const supabaseRestUrl = import.meta.env.VITE_SUPABASE_REST_URL || 'https://sjygntfmjyawxncdjqdx.supabase.co/rest/v1';
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || '';
+const restUrl = import.meta.env.VITE_SUPABASE_REST_URL;
+const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
 let supabase: ReturnType<typeof createClient> | null = null;
 try {
@@ -25,9 +25,12 @@ try {
 // Temporary presence-only logs for debugging env vars (do not print secret values)
 try {
   // eslint-disable-next-line no-console
-  console.log('VITE_SUPABASE_REST_URL exists:', !!supabaseRestUrl);
+  console.log('VITE_SUPABASE_REST_URL exists:', !!restUrl);
   // eslint-disable-next-line no-console
-  console.log('VITE_SUPABASE_ANON_KEY exists:', !!supabaseAnonKey);
+  console.log('VITE_SUPABASE_ANON_KEY exists:', !!anonKey);
+  // Log resolved REST URL once for debugging (allowed):
+  // eslint-disable-next-line no-console
+  console.log('Resolved REST URL:', restUrl || 'not-set');
 } catch (err) {
   // ignore
 }
@@ -264,16 +267,16 @@ function App() {
 
     // Fallback to REST endpoint
     try {
-      const base = supabaseRestUrl.replace(/\/$/, '');
+      const base = (restUrl || '').replace(/\/$/, '');
       const url = `${base}/leaderboard?select=name,score,date&order=score.desc&limit=10`;
       const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-      if (supabaseAnonKey) {
-        headers.apikey = supabaseAnonKey;
-        headers.Authorization = `Bearer ${supabaseAnonKey}`;
+      if (anonKey) {
+        headers.apikey = anonKey;
+        headers.Authorization = `Bearer ${anonKey}`;
       }
       // Debug: log whether anon key exists (presence only)
       // eslint-disable-next-line no-console
-      console.log('REST fallback: supabaseAnonKey present:', !!supabaseAnonKey);
+      console.log('REST fallback: anonKey present:', !!anonKey);
       const res = await fetch(url, { headers });
       if (!res.ok) {
         const text = await res.text();
@@ -325,12 +328,12 @@ function App() {
 
     // Fallback to REST
     try {
-      const base = supabaseRestUrl.replace(/\/$/, '');
+      const base = (restUrl || '').replace(/\/$/, '');
       const url = `${base}/leaderboard`;
       const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-      if (supabaseAnonKey) {
-        headers.apikey = supabaseAnonKey;
-        headers.Authorization = `Bearer ${supabaseAnonKey}`;
+      if (anonKey) {
+        headers.apikey = anonKey;
+        headers.Authorization = `Bearer ${anonKey}`;
       }
       // Request representation may require Prefer header depending on PostgREST settings
       headers.Prefer = 'return=representation';
