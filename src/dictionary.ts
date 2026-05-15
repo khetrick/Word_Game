@@ -31,7 +31,7 @@ export const DICTIONARY = new Set<string>([
   'two', 'ugh', 'urn', 'use', 'van', 'vat', 'vet', 'via', 'vie', 'vim', 'vow', 'wad', 'wag',
   'war', 'was', 'wax', 'way', 'web', 'wed', 'wee', 'wet', 'who', 'why', 'wig', 'win', 'wit',
   'woe', 'won', 'woo', 'wow', 'wry', 'yak', 'yam', 'yap', 'yaw', 'yes', 'yet', 'yew', 'yin','vex',
-  'you', 'yuk', 'yum', 'zap', 'zen', 'zip', 'zoo','wod', 'bot', 'bin',
+  'you', 'yuk', 'yum', 'zap', 'zen', 'zip', 'zoo','wod', 'bot', 'bin','zit',
 
   // 4-letter words (600+)
   'able', 'ache', 'acid', 'acme', 'acre', 'aged', 'aide', 'also', 'alto', 'amen', 'amid',

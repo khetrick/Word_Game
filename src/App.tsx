@@ -8,6 +8,9 @@ const STORAGE_KEY = 'word-drop-high-score';
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
 const supabaseKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || '';
+// Optional REST endpoint and anon key fallbacks (user supplied REST base)
+const supabaseRestUrl = import.meta.env.VITE_SUPABASE_REST_URL || 'https://sjygntfmjyawxncdjqdx.supabase.co/rest/v1';
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || '';
 
 let supabase: ReturnType<typeof createClient> | null = null;
 try {
@@ -15,7 +18,7 @@ try {
     supabase = createClient(supabaseUrl, supabaseKey);
   }
 } catch (err) {
-  console.error('Failed to initialize Supabase:', err);
+  console.error('Failed to initialize Supabase client:', err);
   supabase = null;
 }
 
@@ -220,28 +223,51 @@ function App() {
   );
 
   const fetchGlobalLeaderboard = async (): Promise<LeaderboardEntry[]> => {
-    console.log('Fetching global leaderboard from Supabase');
+    console.log('Fetching global leaderboard (client then REST)');
     setLeaderboardError(null);
-    
-    if (!supabase || !supabaseUrl || !supabaseKey) {
-      setLeaderboardError('Global leaderboard unavailable');
-      setLeaderboard([]);
-      return [];
+
+    // Try Supabase client first
+    if (supabase) {
+      try {
+        const { data, error } = await (supabase as any).from('leaderboard').select('name, score, date');
+        if (error || !data) {
+          console.warn('Supabase client fetch failed, falling back to REST:', error);
+        } else {
+          const entries: LeaderboardEntry[] = (data as any[])
+            .sort((a, b) => (b.score || 0) - (a.score || 0))
+            .slice(0, 10)
+            .map((row: any) => ({
+              name: typeof row.name === 'string' && row.name.trim() !== '' ? row.name.slice(0, 12) : 'Player',
+              score: typeof row.score === 'number' ? row.score : Number(row.score) || 0,
+              date: typeof row.date === 'string' ? row.date : new Date().toISOString(),
+            }));
+          setLeaderboard(entries);
+          setLeaderboardError(null);
+          return entries;
+        }
+      } catch (err) {
+        console.warn('Supabase client threw while fetching, falling back to REST:', err);
+      }
     }
 
+    // Fallback to REST endpoint
     try {
-      const { data, error } = await supabase
-        .from('leaderboard')
-        .select('name, score, date');
-
-      if (error || !data) {
-        console.error('Supabase fetch error', error);
+      const base = supabaseRestUrl.replace(/\/$/, '');
+      const url = `${base}/leaderboard?select=name,score,date&order=score.desc&limit=10`;
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (supabaseAnonKey) {
+        headers.apikey = supabaseAnonKey;
+        headers.Authorization = `Bearer ${supabaseAnonKey}`;
+      }
+      const res = await fetch(url, { headers });
+      if (!res.ok) {
+        console.error('REST leaderboard fetch failed', res.status, await res.text());
         setLeaderboardError('Global leaderboard unavailable');
         setLeaderboard([]);
         return [];
       }
-
-      const entries: LeaderboardEntry[] = (data as any[])
+      const data = (await res.json()) as any[];
+      const entries: LeaderboardEntry[] = (data || [])
         .sort((a, b) => (b.score || 0) - (a.score || 0))
         .slice(0, 10)
         .map((row: any) => ({
@@ -249,12 +275,11 @@ function App() {
           score: typeof row.score === 'number' ? row.score : Number(row.score) || 0,
           date: typeof row.date === 'string' ? row.date : new Date().toISOString(),
         }));
-
       setLeaderboard(entries);
       setLeaderboardError(null);
       return entries;
     } catch (err) {
-      console.error('Unexpected error fetching leaderboard:', err);
+      console.error('REST fetch error', err);
       setLeaderboardError('Global leaderboard unavailable');
       setLeaderboard([]);
       return [];
@@ -262,27 +287,48 @@ function App() {
   };
 
   const submitScoreToSupabase = async (name: string, score: number) => {
-    console.log('Submitting score to Supabase');
-    
-    if (!supabase || !supabaseUrl || !supabaseKey) {
-      setLeaderboardError('Global leaderboard unavailable');
-      return false;
+    console.log('Submitting score to Supabase/REST');
+
+    const scoreData = { name, score, date: new Date().toISOString() };
+
+    // Try Supabase client first
+    if (supabase) {
+      try {
+        const result = await (supabase as any).from('leaderboard').insert([scoreData]);
+        if (result.error) {
+          console.warn('Supabase client submit failed, falling back to REST:', result.error);
+        } else {
+          return true;
+        }
+      } catch (err) {
+        console.warn('Supabase client threw while submitting, falling back to REST:', err);
+      }
     }
 
+    // Fallback to REST
     try {
-      const scoreData = { name, score, date: new Date().toISOString() };
-      const result = await (supabase as any).from('leaderboard').insert([scoreData]);
-      const { error } = result;
-
-      if (error) {
-        console.error('Supabase submit error', error);
+      const base = supabaseRestUrl.replace(/\/$/, '');
+      const url = `${base}/leaderboard`;
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (supabaseAnonKey) {
+        headers.apikey = supabaseAnonKey;
+        headers.Authorization = `Bearer ${supabaseAnonKey}`;
+      }
+      // Request representation may require Prefer header depending on PostgREST settings
+      headers.Prefer = 'return=representation';
+      const res = await fetch(url, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(scoreData),
+      });
+      if (!res.ok) {
+        console.error('REST submit failed', res.status, await res.text());
         setLeaderboardError('Global leaderboard unavailable');
         return false;
       }
-
       return true;
     } catch (err) {
-      console.error('Unexpected error submitting score:', err);
+      console.error('REST submit error', err);
       setLeaderboardError('Global leaderboard unavailable');
       return false;
     }
