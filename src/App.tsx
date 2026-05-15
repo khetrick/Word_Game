@@ -22,6 +22,16 @@ try {
   supabase = null;
 }
 
+// Temporary presence-only logs for debugging env vars (do not print secret values)
+try {
+  // eslint-disable-next-line no-console
+  console.log('VITE_SUPABASE_REST_URL exists:', !!supabaseRestUrl);
+  // eslint-disable-next-line no-console
+  console.log('VITE_SUPABASE_ANON_KEY exists:', !!supabaseAnonKey);
+} catch (err) {
+  // ignore
+}
+
 const letterPool = [
   ...'EEEEEEEEEEEEEEEEAAAAAAAIIIIIIIIOOOOOOOOONNNNNNRRRRRRTTTTTTLLLLSSSSUUUUUDDDDDDGGGBBCCMMPPFFHHVVWWYYKJXQZ'
 ];
@@ -186,6 +196,7 @@ function App() {
   const [highScore, setHighScore] = useState(0);
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
   const [leaderboardError, setLeaderboardError] = useState<string | null>(null);
+  const [leaderboardDetail, setLeaderboardDetail] = useState<string | null>(null);
   const [newScoreIndex, setNewScoreIndex] = useState(-1);
   const [showNicknameModal, setShowNicknameModal] = useState(false);
   const [nicknameInput, setNicknameInput] = useState('Player');
@@ -225,6 +236,7 @@ function App() {
   const fetchGlobalLeaderboard = async (): Promise<LeaderboardEntry[]> => {
     console.log('Fetching global leaderboard (client then REST)');
     setLeaderboardError(null);
+    setLeaderboardDetail(null);
 
     // Try Supabase client first
     if (supabase) {
@@ -259,10 +271,15 @@ function App() {
         headers.apikey = supabaseAnonKey;
         headers.Authorization = `Bearer ${supabaseAnonKey}`;
       }
+      // Debug: log whether anon key exists (presence only)
+      // eslint-disable-next-line no-console
+      console.log('REST fallback: supabaseAnonKey present:', !!supabaseAnonKey);
       const res = await fetch(url, { headers });
       if (!res.ok) {
-        console.error('REST leaderboard fetch failed', res.status, await res.text());
+        const text = await res.text();
+        console.error('REST leaderboard fetch failed', res.status, text);
         setLeaderboardError('Global leaderboard unavailable');
+        setLeaderboardDetail(`REST error ${res.status}: ${text}`);
         setLeaderboard([]);
         return [];
       }
@@ -278,9 +295,10 @@ function App() {
       setLeaderboard(entries);
       setLeaderboardError(null);
       return entries;
-    } catch (err) {
+    } catch (err: any) {
       console.error('REST fetch error', err);
       setLeaderboardError('Global leaderboard unavailable');
+      setLeaderboardDetail(err?.message ? String(err.message) : String(err));
       setLeaderboard([]);
       return [];
     }
@@ -836,19 +854,25 @@ function App() {
               <div className="leaderboard-section">
                 <h3>🏆 Global Leaderboard</h3>
                 <div className="leaderboard">
-                  {leaderboardError ? (
-                    <div className="no-scores">{leaderboardError}</div>
-                  ) : leaderboard.length > 0 ? (
-                    leaderboard.map((entry, index) => (
-                      <div key={`${entry.score}-${entry.date}`} className={`leaderboard-item ${index === newScoreIndex ? 'new-score' : ''}`}>
-                        <span className="rank">#{index + 1}</span>
-                        <span className="score">{entry.name} — {entry.score.toLocaleString()}</span>
-                        {index === newScoreIndex && <span className="new-score-badge">✨</span>}
+                    {leaderboardError ? (
+                      <div className="no-scores">
+                        <div>Global leaderboard unavailable.</div>
+                        {leaderboardDetail && <div style={{ fontSize: '0.85rem', marginTop: '6px' }}>{leaderboardDetail}</div>}
+                        <div style={{ marginTop: '8px' }}>
+                          <button className="secondary" onClick={() => { setLeaderboardError(null); setLeaderboardDetail(null); fetchGlobalLeaderboard(); }}>Retry leaderboard</button>
+                        </div>
                       </div>
-                    ))
-                  ) : (
-                    <div className="no-scores">No global scores yet - be the first!</div>
-                  )}
+                    ) : Array.isArray(leaderboard) && leaderboard.length > 0 ? (
+                      leaderboard.map((entry, index) => (
+                        <div key={`${entry.score}-${entry.date}`} className={`leaderboard-item ${index === newScoreIndex ? 'new-score' : ''}`}>
+                          <span className="rank">#{index + 1}</span>
+                          <span className="score">{entry.name} — {entry.score.toLocaleString()}</span>
+                          {index === newScoreIndex && <span className="new-score-badge">✨</span>}
+                        </div>
+                      ))
+                    ) : (
+                      <div className="no-scores">No global scores yet - be the first!</div>
+                    )}
                 </div>
               </div>
 
