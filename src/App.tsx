@@ -22,18 +22,7 @@ try {
   supabase = null;
 }
 
-// Temporary presence-only logs for debugging env vars (do not print secret values)
-try {
-  // eslint-disable-next-line no-console
-  console.log('VITE_SUPABASE_REST_URL exists:', !!restUrl);
-  // eslint-disable-next-line no-console
-  console.log('VITE_SUPABASE_ANON_KEY exists:', !!anonKey);
-  // Log resolved REST URL once for debugging (allowed):
-  // eslint-disable-next-line no-console
-  console.log('Resolved REST URL:', restUrl || 'not-set');
-} catch (err) {
-  // ignore
-}
+// Debug logs removed: preserve error handling only
 
 const letterPool = [
   ...'EEEEEEEEEEEEEEEEAAAAAAAIIIIIIIIOOOOOOOOONNNNNNRRRRRRTTTTTTLLLLSSSSUUUUUDDDDDDGGGBBCCMMPPFFHHVVWWYYKJXQZ'
@@ -66,6 +55,40 @@ const SCRABBLE_VALUES: Record<string, number> = {
   X: 8,
   Y: 4,
   Z: 10
+};
+
+// --- Profanity filter setup (lightweight moderation-safe list) ---
+// Keep list intentionally small to avoid overblocking common names.
+const BAD_WORDS = [
+  'fuck', 'shit', 'bitch', 'asshole', 'dick', 'slut', 'whore'
+];
+
+const LEET_MAP: Record<string, string> = {
+  '1': 'i',
+  '3': 'e',
+  '4': 'a',
+  '0': 'o',
+  '5': 's',
+  '7': 't',
+};
+
+const normalizeNickname = (name: string) => {
+  if (!name) return '';
+  let s = name.toLowerCase();
+  // replace leetspeak digits with letters
+  s = s.split('').map((ch) => (LEET_MAP[ch] ? LEET_MAP[ch] : ch)).join('');
+  // remove spaces and punctuation, keep alphanumerics
+  s = s.replace(/[^a-z0-9]/g, '');
+  return s;
+};
+
+const isNicknameAllowed = (name: string) => {
+  const norm = normalizeNickname(name);
+  if (!norm) return false;
+  for (const bad of BAD_WORDS) {
+    if (norm.includes(bad)) return false;
+  }
+  return true;
 };
 
 const lengthMultiplier = (length: number) => {
@@ -203,6 +226,7 @@ function App() {
   const [newScoreIndex, setNewScoreIndex] = useState(-1);
   const [showNicknameModal, setShowNicknameModal] = useState(false);
   const [nicknameInput, setNicknameInput] = useState('Player');
+  const [nicknameError, setNicknameError] = useState<string | null>(null);
   const [pendingScore, setPendingScore] = useState<number | null>(null);
   const [longestWord, setLongestWord] = useState('');
   const [highestScoringWord, setHighestScoringWord] = useState('');
@@ -237,7 +261,7 @@ function App() {
   );
 
   const fetchGlobalLeaderboard = async (): Promise<LeaderboardEntry[]> => {
-    console.log('Fetching global leaderboard (client then REST)');
+    // Fetch global leaderboard (client then REST) - no debug logs in production
     setLeaderboardError(null);
     setLeaderboardDetail(null);
 
@@ -246,7 +270,7 @@ function App() {
       try {
         const { data, error } = await (supabase as any).from('leaderboard').select('name, score, created_at');
         if (error || !data) {
-          console.warn('Supabase client fetch failed, falling back to REST:', error);
+          // Supabase client fetch failed; falling back to REST (error details logged below)
         } else {
           const entries: LeaderboardEntry[] = (data as any[])
             .sort((a, b) => (b.score || 0) - (a.score || 0))
@@ -261,7 +285,7 @@ function App() {
           return entries;
         }
       } catch (err) {
-        console.warn('Supabase client threw while fetching, falling back to REST:', err);
+        // Supabase client threw while fetching; falling back to REST (error details logged below)
       }
     }
 
@@ -274,9 +298,7 @@ function App() {
         headers.apikey = anonKey;
         headers.Authorization = `Bearer ${anonKey}`;
       }
-      // Debug: log whether anon key exists (presence only)
-      // eslint-disable-next-line no-console
-      console.log('REST fallback: anonKey present:', !!anonKey);
+      // Debug logs removed: not logging anonKey presence
       const res = await fetch(url, { headers });
       if (!res.ok) {
         const text = await res.text();
@@ -308,7 +330,7 @@ function App() {
   };
 
   const submitScoreToSupabase = async (name: string, score: number) => {
-    console.log('Submitting score to Supabase/REST');
+    // Submitting score to Supabase/REST (no debug logging in production)
 
     const scoreData = { name, score };
 
@@ -317,12 +339,12 @@ function App() {
       try {
         const result = await (supabase as any).from('leaderboard').insert([scoreData]);
         if (result.error) {
-          console.warn('Supabase client submit failed, falling back to REST:', result.error);
+          // Supabase client submit failed; falling back to REST (error handled below)
         } else {
           return true;
         }
       } catch (err) {
-        console.warn('Supabase client threw while submitting, falling back to REST:', err);
+        // Supabase client threw while submitting; falling back to REST (error handled below)
       }
     }
 
@@ -371,7 +393,14 @@ function App() {
 
   const handleNicknameSubmit = async () => {
     if (pendingScore === null) return;
-    const name = nicknameInput.trim().slice(0, 12) || 'Player';
+    const raw = nicknameInput.trim();
+    const name = (raw === '' ? 'Player' : raw.slice(0, 12));
+    // validate nickname
+    if (name !== 'Player' && !isNicknameAllowed(name)) {
+      setNicknameError('Please choose a different nickname.');
+      return;
+    }
+    setNicknameError(null);
     const success = await submitScoreToSupabase(name, pendingScore);
     setPendingScore(null);
     setShowNicknameModal(false);
@@ -820,6 +849,9 @@ function App() {
               <p className="info-section" style={{ marginTop: '8px' }}>
                 Keep it short — 12 characters max.
               </p>
+              {nicknameError && (
+                <div style={{ color: '#ffd2d2', marginTop: '8px' }}>{nicknameError}</div>
+              )}
               <div className="button-row">
                 <button className="secondary" onClick={handleNicknameCancel}>
                   Cancel
