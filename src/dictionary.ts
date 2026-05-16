@@ -16,7 +16,7 @@ export const DICTIONARY = new Set<string>([
   'jay', 'jet', 'jib', 'jig', 'job', 'jog', 'joy', 'jug', 'jut', 'keg', 'ken', 'key', 'kid',
   'kin', 'kit', 'lab', 'lad', 'lag', 'lap', 'law', 'lax', 'lay', 'lea', 'led', 'leg', 'let',
   'lid', 'lie', 'lip', 'lit', 'log', 'lot', 'low', 'mac', 'mad', 'man', 'map', 'mar', 'mat','mut',
-  'max', 'may', 'men', 'met', 'mid', 'mix', 'mob', 'mod', 'mom', 'mop', 'mud', 'mug', 'nab','nit','nip',
+  'max', 'may', 'men', 'met', 'mid', 'mix', 'mob', 'mod', 'mom', 'mop', 'mud', 'mug', 'nab','nit','nip','non',
   'nag', 'nap', 'net', 'new', 'nod', 'nor', 'not', 'now', 'nub', 'nun', 'nut', 'oak', 'oar','ode',
   'oat', 'odd', 'off', 'oft', 'oil', 'old', 'one', 'opt', 'orb', 'ore', 'our', 'out', 'owe',
   'owl', 'own', 'pad', 'pal', 'pan', 'par', 'pat', 'paw', 'pay', 'pea', 'peg', 'pen', 'pep','pee',
