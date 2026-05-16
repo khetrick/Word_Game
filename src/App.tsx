@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { createClient } from '@supabase/supabase-js';
 import { DICTIONARY } from './dictionary';
 
-const ROWS = 10;
+const ROWS = 8;
 const COLS = 6;
 const STORAGE_KEY = 'word-drop-high-score';
 
@@ -458,7 +458,7 @@ function App() {
         }
         return next;
       });
-    }, 1700);
+    }, 2000);
     return () => window.clearInterval(interval);
   }, [status, score, leaderboard]);
 
