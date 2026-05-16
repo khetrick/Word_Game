@@ -253,6 +253,7 @@ function App() {
   const boardRef = useRef(board);
   const scoreRef = useRef(score);
   const statusRef = useRef(status);
+  const highScoreAtGameStartRef = useRef(0);
   const dangerActiveRef = useRef(false);
   const dangerTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const dangerTickRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -389,7 +390,9 @@ function App() {
 
   const prepareGameOver = (finalScore: number) => {
     const lowestScore = leaderboard[leaderboard.length - 1]?.score ?? 0;
-    const qualifies = leaderboardError === null && (leaderboard.length < 10 || finalScore > lowestScore);
+    const isPersonalHighScore = finalScore > highScoreAtGameStartRef.current;
+    const qualifiesForLeaderboard = leaderboard.length < 10 || finalScore > lowestScore;
+    const qualifies = finalScore > 0 && (isPersonalHighScore || qualifiesForLeaderboard);
     if (qualifies) {
       setPendingScore(finalScore);
       setNicknameInput('Player');
@@ -477,8 +480,9 @@ function App() {
 
   useEffect(() => {
     const storedHighScore = window.localStorage.getItem(STORAGE_KEY);
+    const storedHighScoreValue = storedHighScore ? Number(storedHighScore) || 0 : 0;
     if (storedHighScore) {
-      setHighScore(Number(storedHighScore) || 0);
+      setHighScore(storedHighScoreValue);
     }
     try {
       fetchGlobalLeaderboard();
@@ -496,7 +500,7 @@ function App() {
         console.error('Error loading dictionary:', err);
         setDictionaryError('Dictionary unavailable');
       });
-    startNewGame();
+    startNewGame(storedHighScoreValue);
   }, []);
 
   useEffect(() => {
@@ -555,9 +559,10 @@ function App() {
     return nextBoard;
   };
 
-  const startNewGame = () => {
+  const startNewGame = (personalBestAtStart = highScore) => {
     const empty = createEmptyBoard();
     const seeded = spawnInitialTiles(empty);
+    highScoreAtGameStartRef.current = personalBestAtStart;
     setBoard(seeded);
     setSelected([]);
     setScore(0);
@@ -796,7 +801,7 @@ function App() {
             <button className="secondary" onClick={() => setShowInfo(true)} style={{ padding: '8px', minHeight: 'auto', fontSize: '1.2rem' }}>
               ℹ️
             </button>
-            <button className="secondary" onClick={startNewGame}>
+            <button className="secondary" onClick={() => startNewGame()}>
               Restart
             </button>
           </div>
@@ -1003,7 +1008,7 @@ function App() {
               </div>
 
               <div className="modal-actions">
-                <button className="primary restart-btn" onClick={startNewGame}>
+                <button className="primary restart-btn" onClick={() => startNewGame()}>
                   🎯 Play Again
                 </button>
               </div>
