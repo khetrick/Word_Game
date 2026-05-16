@@ -92,7 +92,7 @@ h1 {
 .board {
   display: grid;
   grid-template-columns: repeat(6, var(--tile-size));
-  grid-template-rows: repeat(10, var(--tile-size));
+  grid-template-rows: repeat(8, var(--tile-size));
   gap: 4px;
   margin: 8px auto;
   padding: 8px;
