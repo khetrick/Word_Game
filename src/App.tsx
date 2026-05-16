@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createClient } from '@supabase/supabase-js';
-import { DICTIONARY } from './dictionary';
+import { loadDictionary } from './dictionary';
 
 const ROWS = 8;
 const COLS = 6;
@@ -224,6 +224,8 @@ function App() {
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
   const [leaderboardError, setLeaderboardError] = useState<string | null>(null);
   const [leaderboardDetail, setLeaderboardDetail] = useState<string | null>(null);
+  const [dictionary, setDictionary] = useState<Set<string> | null>(null);
+  const [dictionaryError, setDictionaryError] = useState<string | null>(null);
   const [newScoreIndex, setNewScoreIndex] = useState(-1);
   const [showNicknameModal, setShowNicknameModal] = useState(false);
   const [nicknameInput, setNicknameInput] = useState('Player');
@@ -485,6 +487,15 @@ function App() {
       setLeaderboard([]);
       setLeaderboardError('Global leaderboard unavailable');
     }
+    loadDictionary()
+      .then((words) => {
+        setDictionary(words);
+        setDictionaryError(null);
+      })
+      .catch((err) => {
+        console.error('Error loading dictionary:', err);
+        setDictionaryError('Dictionary unavailable');
+      });
     startNewGame();
   }, []);
 
@@ -676,8 +687,14 @@ function App() {
   };
 
   const handleSubmit = () => {
+    if (!dictionary) {
+      setInvalid(true);
+      window.setTimeout(() => setInvalid(false), 420);
+      return;
+    }
+
     const word = selectedWord;
-    if (word.length < 3 || !isValidWord(word, DICTIONARY)) {
+    if (word.length < 3 || !isValidWord(word, dictionary)) {
       setInvalid(true);
       setSelected([]);
       const ctx = getAudioContext();
@@ -820,18 +837,19 @@ function App() {
           )}
           <div className={`selected-word${invalid ? ' flash' : ''}${wordRewardType ? ' reward-pulse' : ''}`}>
             <p>
-              <span className="word-keyword">Word</span>: {selectedWord || 'Tap tiles'}
+              <span className="word-keyword">Word</span>: {selectedWord || (dictionary ? 'Tap tiles' : 'Loading words')}
             </p>
             <p>{selected.length} tile{selected.length === 1 ? '' : 's'}
               {wordRewardType === 'huge' && <span className="reward-badge huge-badge">HUGE!</span>}
               {wordRewardType === 'big' && <span className="reward-badge big-badge">BIG!</span>}
             </p>
           </div>
+          {dictionaryError && <div className="dictionary-error">{dictionaryError}</div>}
           <div className="button-row">
             <button className="secondary" onClick={handleClear} disabled={selected.length === 0}>
               Clear
             </button>
-            <button className="primary" onClick={handleSubmit} disabled={selected.length < 3 || status !== 'playing'}>
+            <button className="primary" onClick={handleSubmit} disabled={selected.length < 3 || status !== 'playing' || !dictionary}>
               Submit
             </button>
           </div>
