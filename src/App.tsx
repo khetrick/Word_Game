@@ -5,6 +5,7 @@ import { DICTIONARY } from './dictionary';
 const ROWS = 8;
 const COLS = 6;
 const STORAGE_KEY = 'word-drop-high-score';
+const DANGER_DURATION_MS = 3000;
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
 const supabaseKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || '';
@@ -233,6 +234,7 @@ function App() {
   const [highestWordScore, setHighestWordScore] = useState(0);
   const [combo, setCombo] = useState(0);
   const [status, setStatus] = useState<'playing' | 'gameover'>('playing');
+  const [dangerSecondsLeft, setDangerSecondsLeft] = useState<number | null>(null);
   const [invalid, setInvalid] = useState(false);
   const audioRef = useRef<AudioContext | null>(null);
   const lastSuccessTime = useRef(0);
@@ -246,6 +248,12 @@ function App() {
   const isDraggingRef = useRef(false); // Use ref to avoid stale closure issues
   const isPointerDownRef = useRef(false); // Track if pointer is currently down
   const didDragRef = useRef(false); // Track if a drag occurred during this pointer session
+  const boardRef = useRef(board);
+  const scoreRef = useRef(score);
+  const statusRef = useRef(status);
+  const dangerActiveRef = useRef(false);
+  const dangerTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const dangerTickRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const DRAG_THRESHOLD = 8; // pixels required to consider it a drag
 
   const getAudioContext = () => {
@@ -391,6 +399,49 @@ function App() {
     }
   };
 
+  const clearDangerCountdown = () => {
+    if (dangerTimeoutRef.current) {
+      clearTimeout(dangerTimeoutRef.current);
+      dangerTimeoutRef.current = null;
+    }
+    if (dangerTickRef.current) {
+      clearInterval(dangerTickRef.current);
+      dangerTickRef.current = null;
+    }
+    dangerActiveRef.current = false;
+    setDangerSecondsLeft(null);
+  };
+
+  const finishGameOver = () => {
+    if (statusRef.current === 'gameover') return;
+    clearDangerCountdown();
+    setStatus('gameover');
+    prepareGameOver(scoreRef.current);
+  };
+
+  const startDangerCountdown = (boardState: Tile[][]) => {
+    if (statusRef.current !== 'playing' || dangerActiveRef.current || !isTopRowFull(boardState)) {
+      return;
+    }
+
+    dangerActiveRef.current = true;
+    const endsAt = Date.now() + DANGER_DURATION_MS;
+    setDangerSecondsLeft(Math.ceil(DANGER_DURATION_MS / 1000));
+
+    dangerTickRef.current = window.setInterval(() => {
+      const secondsLeft = Math.max(1, Math.ceil((endsAt - Date.now()) / 1000));
+      setDangerSecondsLeft(secondsLeft);
+    }, 250);
+
+    dangerTimeoutRef.current = window.setTimeout(() => {
+      if (isTopRowFull(boardRef.current)) {
+        finishGameOver();
+      } else {
+        clearDangerCountdown();
+      }
+    }, DANGER_DURATION_MS);
+  };
+
   const handleNicknameSubmit = async () => {
     if (pendingScore === null) return;
     const raw = nicknameInput.trim();
@@ -438,6 +489,20 @@ function App() {
   }, []);
 
   useEffect(() => {
+    boardRef.current = board;
+  }, [board]);
+
+  useEffect(() => {
+    scoreRef.current = score;
+  }, [score]);
+
+  useEffect(() => {
+    statusRef.current = status;
+  }, [status]);
+
+  useEffect(() => clearDangerCountdown, []);
+
+  useEffect(() => {
     window.localStorage.setItem(STORAGE_KEY, String(highScore));
   }, [highScore]);
 
@@ -445,22 +510,23 @@ function App() {
     if (status !== 'playing') return undefined;
     const interval = window.setInterval(() => {
       setBoard((prev) => {
+        if (dangerActiveRef.current) {
+          return prev;
+        }
         const free = getTopFreeColumns(prev);
         if (free.length === 0) {
-          setStatus('gameover');
-          prepareGameOver(score);
+          startDangerCountdown(prev);
           return prev;
         }
         const next = dropTile(prev, free[Math.floor(Math.random() * free.length)], randomLetter());
         if (isTopRowFull(next)) {
-          setStatus('gameover');
-          prepareGameOver(score);
+          startDangerCountdown(next);
         }
         return next;
       });
     }, 2000);
     return () => window.clearInterval(interval);
-  }, [status, score, leaderboard]);
+  }, [status]);
 
   useEffect(() => {
     if (score > highScore) {
@@ -495,6 +561,7 @@ function App() {
     setNewScoreIndex(-1);
     setWordRewardType(null);
     setRecoveryActive(false);
+    clearDangerCountdown();
     if (recoveryTimeoutRef.current) {
       clearTimeout(recoveryTimeoutRef.current);
       recoveryTimeoutRef.current = null;
@@ -654,8 +721,9 @@ function App() {
       }
       
       if (isTopRowFull(recoveryBoard)) {
-        setStatus('gameover');
-        prepareGameOver(score);
+        startDangerCountdown(recoveryBoard);
+      } else if (dangerActiveRef.current) {
+        clearDangerCountdown();
       }
       return recoveryBoard;
     });
@@ -745,6 +813,11 @@ function App() {
 
       <div className="controls">
         <div className="panel">
+          {dangerSecondsLeft !== null && (
+            <div className="danger-countdown">
+              Clear a word in {dangerSecondsLeft}s
+            </div>
+          )}
           <div className={`selected-word${invalid ? ' flash' : ''}${wordRewardType ? ' reward-pulse' : ''}`}>
             <p>
               <span className="word-keyword">Word</span>: {selectedWord || 'Tap tiles'}
