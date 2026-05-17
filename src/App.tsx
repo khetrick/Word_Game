@@ -8,10 +8,11 @@ const STORAGE_KEY = 'word-drop-high-score';
 const DANGER_DURATION_MS = 3000;
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
-const supabaseKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || '';
-// Optional REST endpoint and anon key fallbacks (user supplied REST base)
-const restUrl = import.meta.env.VITE_SUPABASE_REST_URL;
-const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+const supabaseKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || import.meta.env.VITE_SUPABASE_ANON_KEY || '';
+// Optional REST endpoint and anon key fallbacks for local development.
+const restUrl = import.meta.env.VITE_SUPABASE_REST_URL || '';
+const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || supabaseKey;
+const supabaseRestBase = (restUrl || (supabaseUrl ? `${supabaseUrl.replace(/\/$/, '')}/rest/v1` : '')).replace(/\/$/, '');
 
 let supabase: ReturnType<typeof createClient> | null = null;
 try {
@@ -115,10 +116,31 @@ type CellPos = {
 };
 
 type LeaderboardEntry = {
+  id?: string | number;
   name: string;
   score: number;
   created_at: string;
 };
+
+const normalizeLeaderboardEntry = (row: any): LeaderboardEntry => ({
+  id: typeof row.id === 'string' || typeof row.id === 'number' ? row.id : undefined,
+  name: typeof row.name === 'string' && row.name.trim() !== '' ? row.name.slice(0, 12) : 'Player',
+  score: typeof row.score === 'number' ? row.score : Number(row.score) || 0,
+  created_at: typeof row.created_at === 'string' ? row.created_at : new Date().toISOString(),
+});
+
+const dedupeLeaderboardEntries = (entries: LeaderboardEntry[]): LeaderboardEntry[] => {
+  const seen = new Set<string>();
+  return entries.filter((entry) => {
+    const key = `${entry.name.trim().toLowerCase()}|${entry.score}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+};
+
+const topLeaderboardEntries = (entries: LeaderboardEntry[], limit = 10): LeaderboardEntry[] =>
+  dedupeLeaderboardEntries(entries).slice(0, limit);
 
 const createEmptyBoard = (): Tile[][] =>
   Array.from({ length: ROWS }, () => Array.from({ length: COLS }, () => null));
@@ -241,6 +263,7 @@ function App() {
   const audioRef = useRef<AudioContext | null>(null);
   const lastSuccessTime = useRef(0);
   const [showInfo, setShowInfo] = useState(false);
+  const [showLeaderboard, setShowLeaderboard] = useState(false);
   const [showGameOver, setShowGameOver] = useState(false);
   const [dragStartPos, setDragStartPos] = useState<CellPos | null>(null);
   const [wordRewardType, setWordRewardType] = useState<'big' | 'huge' | null>(null);
@@ -257,6 +280,8 @@ function App() {
   const dangerActiveRef = useRef(false);
   const dangerTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const dangerTickRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const gameOverTriggeredRef = useRef(false);
+  const leaderboardFetchOkRef = useRef(false);
   const DRAG_THRESHOLD = 8; // pixels required to consider it a drag
 
   const getAudioContext = () => {
@@ -271,6 +296,11 @@ function App() {
     [board, selected]
   );
 
+  const displayedLeaderboard = useMemo(
+    () => topLeaderboardEntries(leaderboard),
+    [leaderboard]
+  );
+
   const fetchGlobalLeaderboard = async (): Promise<LeaderboardEntry[]> => {
     // Fetch global leaderboard (client then REST) - no debug logs in production
     setLeaderboardError(null);
@@ -279,21 +309,17 @@ function App() {
     // Try Supabase client first
     if (supabase) {
       try {
-        const { data, error } = await (supabase as any).from('leaderboard').select('name, score, created_at');
+        const { data, error } = await (supabase as any).from('leaderboard').select('*');
         if (error || !data) {
           // Supabase client fetch failed; falling back to REST (error details logged below)
         } else {
           const entries: LeaderboardEntry[] = (data as any[])
             .sort((a, b) => (b.score || 0) - (a.score || 0))
-            .slice(0, 10)
-            .map((row: any) => ({
-              name: typeof row.name === 'string' && row.name.trim() !== '' ? row.name.slice(0, 12) : 'Player',
-              score: typeof row.score === 'number' ? row.score : Number(row.score) || 0,
-              created_at: typeof row.created_at === 'string' ? row.created_at : new Date().toISOString(),
-            }));
+            .map(normalizeLeaderboardEntry);
           setLeaderboard(entries);
           setLeaderboardError(null);
-          return entries;
+          leaderboardFetchOkRef.current = true;
+          return topLeaderboardEntries(entries);
         }
       } catch (err) {
         // Supabase client threw while fetching; falling back to REST (error details logged below)
@@ -302,13 +328,18 @@ function App() {
 
     // Fallback to REST endpoint
     try {
-      const base = (restUrl || '').replace(/\/$/, '');
-      const url = `${base}/leaderboard?select=name,score,created_at&order=score.desc,created_at.asc&limit=10`;
-      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-      if (anonKey) {
-        headers.apikey = anonKey;
-        headers.Authorization = `Bearer ${anonKey}`;
+      if (!supabaseRestBase || !anonKey) {
+        setLeaderboardError('Global leaderboard unavailable');
+        setLeaderboardDetail('Supabase is not configured for this environment.');
+        setLeaderboard([]);
+        leaderboardFetchOkRef.current = false;
+        return [];
       }
+
+      const url = `${supabaseRestBase}/leaderboard?select=*&order=score.desc,created_at.asc&limit=50`;
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      headers.apikey = anonKey;
+      headers.Authorization = `Bearer ${anonKey}`;
       // Debug logs removed: not logging anonKey presence
       const res = await fetch(url, { headers });
       if (!res.ok) {
@@ -317,25 +348,33 @@ function App() {
         setLeaderboardError('Global leaderboard unavailable');
         setLeaderboardDetail(`REST error ${res.status}: ${text}`);
         setLeaderboard([]);
+        leaderboardFetchOkRef.current = false;
+        return [];
+      }
+      const contentType = res.headers.get('content-type') || '';
+      if (!contentType.includes('application/json')) {
+        const text = await res.text();
+        console.error('REST leaderboard fetch returned non-JSON', contentType, text.slice(0, 120));
+        setLeaderboardError('Global leaderboard unavailable');
+        setLeaderboardDetail('Leaderboard endpoint returned a non-JSON response.');
+        setLeaderboard([]);
+        leaderboardFetchOkRef.current = false;
         return [];
       }
       const data = (await res.json()) as any[];
       const entries: LeaderboardEntry[] = (data || [])
         .sort((a, b) => (b.score || 0) - (a.score || 0))
-        .slice(0, 10)
-        .map((row: any) => ({
-          name: typeof row.name === 'string' && row.name.trim() !== '' ? row.name.slice(0, 12) : 'Player',
-          score: typeof row.score === 'number' ? row.score : Number(row.score) || 0,
-          created_at: typeof row.created_at === 'string' ? row.created_at : new Date().toISOString(),
-        }));
+        .map(normalizeLeaderboardEntry);
       setLeaderboard(entries);
       setLeaderboardError(null);
-      return entries;
+      leaderboardFetchOkRef.current = true;
+      return topLeaderboardEntries(entries);
     } catch (err: any) {
       console.error('REST fetch error', err);
       setLeaderboardError('Global leaderboard unavailable');
       setLeaderboardDetail(err?.message ? String(err.message) : String(err));
       setLeaderboard([]);
+      leaderboardFetchOkRef.current = false;
       return [];
     }
   };
@@ -361,13 +400,15 @@ function App() {
 
     // Fallback to REST
     try {
-      const base = (restUrl || '').replace(/\/$/, '');
-      const url = `${base}/leaderboard`;
-      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-      if (anonKey) {
-        headers.apikey = anonKey;
-        headers.Authorization = `Bearer ${anonKey}`;
+      if (!supabaseRestBase || !anonKey) {
+        setLeaderboardError('Global leaderboard unavailable');
+        return false;
       }
+
+      const url = `${supabaseRestBase}/leaderboard`;
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      headers.apikey = anonKey;
+      headers.Authorization = `Bearer ${anonKey}`;
       // Request representation may require Prefer header depending on PostgREST settings
       headers.Prefer = 'return=representation';
       const res = await fetch(url, {
@@ -388,11 +429,20 @@ function App() {
     }
   };
 
-  const prepareGameOver = (finalScore: number) => {
-    const lowestScore = leaderboard[leaderboard.length - 1]?.score ?? 0;
-    const isPersonalHighScore = finalScore > highScoreAtGameStartRef.current;
-    const qualifiesForLeaderboard = leaderboard.length < 10 || finalScore > lowestScore;
-    const qualifies = finalScore > 0 && (isPersonalHighScore || qualifiesForLeaderboard);
+  const scoreQualifiesForGlobalTop10 = (finalScore: number, entries: LeaderboardEntry[]) => {
+    const topEntries = topLeaderboardEntries(entries);
+    const lowestScore = topEntries[topEntries.length - 1]?.score ?? 0;
+    return finalScore > 0 && (topEntries.length < 10 || finalScore > lowestScore);
+  };
+
+  const prepareGameOver = async (finalScore: number) => {
+    let currentLeaderboard = displayedLeaderboard;
+    try {
+      currentLeaderboard = await fetchGlobalLeaderboard();
+    } catch (err) {
+      currentLeaderboard = displayedLeaderboard;
+    }
+    const qualifies = leaderboardFetchOkRef.current && scoreQualifiesForGlobalTop10(finalScore, currentLeaderboard);
     if (qualifies) {
       setPendingScore(finalScore);
       setNicknameInput('Player');
@@ -418,10 +468,11 @@ function App() {
   };
 
   const finishGameOver = () => {
-    if (statusRef.current === 'gameover') return;
+    if (statusRef.current === 'gameover' || gameOverTriggeredRef.current) return;
+    gameOverTriggeredRef.current = true;
     clearDangerCountdown();
     setStatus('gameover');
-    prepareGameOver(scoreRef.current);
+    void prepareGameOver(scoreRef.current);
   };
 
   const startDangerCountdown = (boardState: Tile[][]) => {
@@ -505,6 +556,14 @@ function App() {
 
   useEffect(() => {
     boardRef.current = board;
+    if (gameOverTriggeredRef.current || statusRef.current !== 'playing') {
+      return;
+    }
+    if (isTopRowFull(board)) {
+      startDangerCountdown(board);
+    } else if (dangerActiveRef.current) {
+      clearDangerCountdown();
+    }
   }, [board]);
 
   useEffect(() => {
@@ -525,19 +584,14 @@ function App() {
     if (status !== 'playing') return undefined;
     const interval = window.setInterval(() => {
       setBoard((prev) => {
-        if (dangerActiveRef.current) {
+        if (gameOverTriggeredRef.current || statusRef.current !== 'playing' || dangerActiveRef.current) {
           return prev;
         }
         const free = getTopFreeColumns(prev);
         if (free.length === 0) {
-          startDangerCountdown(prev);
           return prev;
         }
-        const next = dropTile(prev, free[Math.floor(Math.random() * free.length)], randomLetter());
-        if (isTopRowFull(next)) {
-          startDangerCountdown(next);
-        }
-        return next;
+        return dropTile(prev, free[Math.floor(Math.random() * free.length)], randomLetter());
       });
     }, 2000);
     return () => window.clearInterval(interval);
@@ -575,6 +629,7 @@ function App() {
     setShowNicknameModal(false);
     setPendingScore(null);
     setNewScoreIndex(-1);
+    gameOverTriggeredRef.current = false;
     setWordRewardType(null);
     setRecoveryActive(false);
     clearDangerCountdown();
@@ -742,9 +797,7 @@ function App() {
         }
       }
       
-      if (isTopRowFull(recoveryBoard)) {
-        startDangerCountdown(recoveryBoard);
-      } else if (dangerActiveRef.current) {
+      if (!isTopRowFull(recoveryBoard) && dangerActiveRef.current) {
         clearDangerCountdown();
       }
       return recoveryBoard;
@@ -782,29 +835,35 @@ function App() {
     setInvalid(false);
   };
 
+  const handleOpenLeaderboard = () => {
+    setShowLeaderboard(true);
+    fetchGlobalLeaderboard();
+  };
+
   return (
     <div className="app">
       <div className="title-row">
-        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-          <h1 style={{ margin: 0 }}>Word Drop</h1>
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '2px' }}>
-            <div style={{ fontSize: '0.95rem', color: '#d9ebff' }}>Current Score</div>
-            <div style={{ fontSize: '1.2rem', fontWeight: 'bold', color: '#4a90e2' }}>
-              {score}
-            </div>
+        <h1>Word Drop</h1>
+        <div className="top-hud" aria-label="Current score and personal high score">
+          <div className="hud-stat">
+            <span className="hud-label">Score</span>
+            <span className="hud-value current-score">{score}</span>
+          </div>
+          <div className="hud-stat">
+            <span className="hud-label">Best</span>
+            <span className="hud-value">{highScore}</span>
           </div>
         </div>
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '8px' }}>
-          <div style={{ fontSize: '0.95rem', color: '#d9ebff' }}>Personal High Score</div>
-          <div style={{ fontSize: '1rem', fontWeight: 'bold', color: '#f8fafc' }}>{highScore}</div>
-          <div style={{ display: 'flex', gap: '8px' }}>
-            <button className="secondary" onClick={() => setShowInfo(true)} style={{ padding: '8px', minHeight: 'auto', fontSize: '1.2rem' }}>
+        <div className="header-actions">
+            <button className="secondary icon-button" onClick={() => setShowInfo(true)} aria-label="How to play">
               ℹ️
             </button>
-            <button className="secondary" onClick={() => startNewGame()}>
+            <button className="secondary icon-button" onClick={handleOpenLeaderboard} aria-label="Leaderboard">
+              #
+            </button>
+            <button className="secondary restart-top-button" onClick={() => startNewGame()}>
               Restart
             </button>
-          </div>
         </div>
       </div>
 
@@ -921,6 +980,41 @@ function App() {
         </div>
       )}
 
+      {showLeaderboard && (
+        <div className="modal-overlay" onClick={() => setShowLeaderboard(false)}>
+          <div className="modal-content leaderboard-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h2>Global Leaderboard</h2>
+              <button className="modal-close" onClick={() => setShowLeaderboard(false)}>Ã—</button>
+            </div>
+            <div className="modal-body">
+              <div className="leaderboard-section standalone-leaderboard">
+                <div className="leaderboard">
+                  {leaderboardError ? (
+                    <div className="no-scores">
+                      <div>Global leaderboard unavailable.</div>
+                      {leaderboardDetail && <div style={{ fontSize: '0.85rem', marginTop: '6px' }}>{leaderboardDetail}</div>}
+                      <div style={{ marginTop: '8px' }}>
+                        <button className="secondary" onClick={() => { setLeaderboardError(null); setLeaderboardDetail(null); fetchGlobalLeaderboard(); }}>Retry leaderboard</button>
+                      </div>
+                    </div>
+                  ) : displayedLeaderboard.length > 0 ? (
+                    displayedLeaderboard.map((entry, index) => (
+                      <div key={`leaderboard-modal-${entry.id ?? `${entry.name}-${entry.score}-${entry.created_at}`}`} className="leaderboard-item">
+                        <span className="rank">#{index + 1}</span>
+                        <span className="score">{entry.name} - {entry.score.toLocaleString()}</span>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="no-scores">No global scores yet - be the first!</div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {showNicknameModal && (
         <div className="modal-overlay" onClick={handleNicknameCancel}>
           <div className="modal-content" onClick={(e) => e.stopPropagation()}>
@@ -993,11 +1087,11 @@ function App() {
                           <button className="secondary" onClick={() => { setLeaderboardError(null); setLeaderboardDetail(null); fetchGlobalLeaderboard(); }}>Retry leaderboard</button>
                         </div>
                       </div>
-                    ) : Array.isArray(leaderboard) && leaderboard.length > 0 ? (
-                      leaderboard.map((entry, index) => (
-                        <div key={`${entry.score}-${entry.created_at}`} className={`leaderboard-item ${index === newScoreIndex ? 'new-score' : ''}`}>
+                    ) : displayedLeaderboard.length > 0 ? (
+                      displayedLeaderboard.map((entry, index) => (
+                        <div key={`game-over-leaderboard-${entry.id ?? `${entry.name}-${entry.score}-${entry.created_at}`}`} className={`leaderboard-item ${index === newScoreIndex ? 'new-score' : ''}`}>
                           <span className="rank">#{index + 1}</span>
-                          <span className="score">{entry.name} — {entry.score.toLocaleString()}</span>
+                          <span className="score">{entry.name} - {entry.score.toLocaleString()}</span>
                           {index === newScoreIndex && <span className="new-score-badge">✨</span>}
                         </div>
                       ))
